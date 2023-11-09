@@ -1,16 +1,18 @@
-# This is a sample Python script.
+import predict
+import unet
+import torch
+import training
+import numpy as np
+from PIL import Image
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+model = unet.UNet()
+model.to(device)
+training.trainMethod(model, 20, 8, 1e-3, 1e-8, device)
 
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
+torch.save(model.state_dict(), "1")
 
-
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    print_hi('PyCharm')
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+prediction = predict.predict(model, "data/test_set_images/test_set_images/test_1", device)
+prediction = np.array(prediction * 255, dtype=np.uint8)
+Image.fromarray(prediction).show()
