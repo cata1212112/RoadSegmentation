@@ -1,3 +1,5 @@
+import os
+
 import constants
 import preprocessing
 from torch.utils.data import DataLoader, random_split
@@ -8,17 +10,36 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 import  torchmetrics
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+
+trainTransforms = A.Compose([
+    A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,),
+    A.HorizontalFlip(p=0.5),
+    A.VerticalFlip(p=0.5),
+    A.RandomRotate90(p=0.5),
+    ToTensorV2()
+])
+
+validationTransforms = A.Compose([
+    A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,),
+    ToTensorV2()
+])
 
 def trainMethod(model, epochs, batchSize, learningRate, weightDecay, device):
-    dataset = preprocessing.CustomDataset(constants.trainingImages, constants.trainingMasks)
+    imgNames = os.listdir(constants.trainingImages)
 
-    nTrain = int(0.66 * len(dataset))
-    nVal = len(dataset) - nTrain
+    trainNames = imgNames[:67]
+    valNames = imgNames[67:]
 
-    print("nTrain: {}, batchSize: {}".format(nTrain, batchSize))
-    trainData, valData = random_split(dataset, [nTrain, nVal])
-    trainLoader = DataLoader(trainData, batchSize, shuffle=True)
-    valLoader = DataLoader(trainData, batchSize, shuffle=True)
+    nTrain = len(trainNames)
+    nVal = len(valNames)
+
+    trainDataset = preprocessing.CustomDataset(constants.trainingImages, trainNames, trainTransforms,  constants.trainingMasks)
+    validationDataset = preprocessing.CustomDataset(constants.trainingImages, valNames, validationTransforms,  constants.trainingMasks)
+
+    trainLoader = DataLoader(trainDataset, batchSize, shuffle=True)
+    valLoader = DataLoader(validationDataset, batchSize, shuffle=True)
 
     writer = SummaryWriter(comment=f'LR_{learningRate}_BS_{batchSize}')
 

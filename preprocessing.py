@@ -9,12 +9,12 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
 class CustomDataset(Dataset):
-    def __init__(self, imgsDir, masksDir=None):
+    def __init__(self, imgsDir, imgNames, transforms, masksDir=None):
         self.imgsDir = imgsDir
         self.masksDir = masksDir
 
-        self.imageNames = os.listdir(imgsDir)
-        self.transform = A.Compose([A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,), ToTensorV2()])
+        self.imageNames = imgNames
+        self.transform = transforms
 
     def __len__(self):
         return len(self.imageNames)
@@ -38,4 +38,4 @@ class CustomDataset(Dataset):
             mask[mask > 0] = 1
             return self.transform(image=image, mask=mask)
         else:
-            return self.transform(image = image, mask=np.zeros_like(image))['image']
+            return self.transform(image=image, mask=np.zeros_like(image))['image']
