@@ -1,10 +1,13 @@
 import os
 
+import cv2
+
 import constants
 import preprocessing
 from torch.utils.data import DataLoader, random_split
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
+from torch.optim import lr_scheduler
 from tqdm import tqdm
 import torch
 import torch.nn.functional as F
@@ -12,12 +15,20 @@ import torch.nn as nn
 import  torchmetrics
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import dataset
+from segmentation_models_pytorch import losses as L
 
 trainTransforms = A.Compose([
+
+    A.HorizontalFlip(),
+    A.VerticalFlip(),
+
+    A.RandomRotate90(),
+    A.Transpose(),
+
+    A.Rotate(limit=90, p=0.7, border_mode=cv2.BORDER_REFLECT),
+
     A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,),
-    A.HorizontalFlip(p=0.5),
-    A.VerticalFlip(p=0.5),
-    A.RandomRotate90(p=0.5),
     ToTensorV2()
 ])
 
@@ -27,24 +38,26 @@ validationTransforms = A.Compose([
 ])
 
 def trainMethod(model, epochs, batchSize, learningRate, weightDecay, device):
-    imgNames = os.listdir(constants.trainingImages)
+    Xtrain, Xval, ytrain, yval = dataset.getTrainValSplit()
 
-    trainNames = imgNames[:67]
-    valNames = imgNames[67:]
 
-    nTrain = len(trainNames)
-    nVal = len(valNames)
+    nTrain = len(Xtrain)
+    nVal = len(Xval)
 
-    trainDataset = preprocessing.CustomDataset(constants.trainingImages, trainNames, trainTransforms,  constants.trainingMasks)
-    validationDataset = preprocessing.CustomDataset(constants.trainingImages, valNames, validationTransforms,  constants.trainingMasks)
+    trainDataset = preprocessing.CustomDataset(Xtrain, ytrain, trainTransforms)
+    validationDataset = preprocessing.CustomDataset(Xval, yval, validationTransforms)
 
     trainLoader = DataLoader(trainDataset, batchSize, shuffle=True)
     valLoader = DataLoader(validationDataset, batchSize, shuffle=True)
 
     writer = SummaryWriter(comment=f'LR_{learningRate}_BS_{batchSize}')
 
-    optimizer = optim.Adam(model.parameters(), lr=learningRate, weight_decay=weightDecay)
-    lossFunction = nn.BCEWithLogitsLoss()
+    optimizer = torch.optim.Adamax(model.parameters(), lr=learningRate)
+    # lossFunction = nn.BCEWithLogitsLoss()
+    # lossFunction = L.JaccardLoss(mode='binary', from_logits=True)
+    lossFunction = L.FocalLoss(mode='binary')
+    # lossFunction = L.TverskyLoss(mode='binary', from_logits=True, alpha=0.4, beta=0.6)
+
     globalStep = 0
     for epoch in range(epochs):
         model.train()
@@ -74,14 +87,15 @@ def trainMethod(model, epochs, batchSize, learningRate, weightDecay, device):
                 globalStep += 1
 
                 if globalStep % 5 == 0:
-                    validationScore = validationMethod(model, valLoader, device)
+                    validationScoreDice, validationScoreJaccard = validationMethod(model, valLoader, device)
                     writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], globalStep)
 
-                    writer.add_scalar('Dice/test', validationScore, globalStep)
+                    writer.add_scalar('Dice/validation', validationScoreDice, globalStep)
+                    writer.add_scalar('Jaccard/validation', validationScoreJaccard, globalStep)
 
                     writer.add_images('images', X, globalStep)
-                    writer.add_images('masks/true', pred.unsqueeze(1), globalStep)
-                    writer.add_images('mask/pred', (torch.sigmoid(pred) > 0.5).unsqueeze(1), globalStep)
+                    writer.add_images('masks/true', (y.unsqueeze(1)) * 255, globalStep)
+                    writer.add_images('mask/predicted', (torch.sigmoid(pred) > 0.5).unsqueeze(1), globalStep)
 
 
 
@@ -89,8 +103,11 @@ def validationMethod(model, loader, device):
     model.eval()
 
     nVal = len(loader)
-    total = 0
+    totalDice = 0
     dice = torchmetrics.Dice(average='micro').to(device)
+    jaccard = torchmetrics.JaccardIndex(task='binary', average='micro').to(device)
+
+    totalJaccard = 0
 
     for batch in loader:
         X = batch['image']
@@ -102,7 +119,8 @@ def validationMethod(model, loader, device):
         with torch.no_grad():
             pred = model(X).squeeze(1)
 
-        total += dice(pred, y)
+        totalDice += dice(pred, y)
+        totalJaccard += jaccard(pred, y)
 
     model.train()
-    return total / nVal
+    return totalDice / nVal, totalJaccard / nVal

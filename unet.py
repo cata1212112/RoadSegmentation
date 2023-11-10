@@ -10,10 +10,12 @@ class ConvBlock(nn.Module):
 
         self.conv = nn.Sequential(
             nn.Conv2d(channelsIn, channelsOut, 3, padding=1, bias=False),
+            # nn.Dropout(0.25),
             nn.BatchNorm2d(channelsOut),
             nn.ReLU(inplace=True),
 
             nn.Conv2d(channelsOut, channelsOut, 3, padding=1, bias=False),
+            # nn.Dropout(0.25),
             nn.BatchNorm2d(channelsOut),
             nn.ReLU(inplace=True),
         )
