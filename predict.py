@@ -9,32 +9,29 @@ import constants
 import dataset
 
 testTransforms = A.Compose([
-    A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0),
+    # A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0),
     ToTensorV2()
 ])
 def predict(model, imagePath, device):
     model.eval()
 
-    patches = dataset.loadTestImage(imagePath)
+    image = dataset.loadTestImage(imagePath)
 
-    testDataset = preprocessing.CustomDataset(patches, np.zeros_like(patches), testTransforms)
-    testLoader = DataLoader(testDataset, len(patches))
 
-    segmentation = np.zeros((96 * int(np.sqrt(len(patches))), 96 * int(np.sqrt(len(patches)))))
+    testDataset = preprocessing.CustomDataset([image], [np.zeros_like(image)], testTransforms)
+    testLoader = DataLoader(testDataset, len(image))
+
+    segmentation = np.zeros_like(image)
 
     with torch.no_grad():
         for imgBatch in testLoader:
-            imgBatch = imgBatch['image'].to(device)
+            imgBatch = imgBatch['image'].to(device=device, dtype=torch.float32)
+
+            # imgBatch = imgBatch[:, :, :400, :400]
 
             pred = torch.sigmoid(model(imgBatch))
 
             pred = (pred > 0.5).float().detach().cpu().numpy()
             pred = np.array(pred, dtype=np.uint8)
             pred = pred * 255
-
-            index = 0
-            for i in range(0, segmentation.shape[1], 96):
-                for j in range(0, segmentation.shape[1], 96):
-                    segmentation[i:i+96, j:j+96] += pred[index][0]
-                    index += 1
-            return np.array(segmentation, dtype=np.uint8)
+            return pred[0][0]

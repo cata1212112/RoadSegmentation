@@ -5,8 +5,29 @@ import numpy as np
 import constants
 import albumentations as A
 from sklearn.model_selection import train_test_split
+from imgaug import augmenters as iaa
+from imgaug.augmentables.segmaps import SegmentationMapsOnImage
 
-def extractPatches(images, masks, patchSize=112):
+# albumentation does not have this feature
+def rotateWithReflectMode(image, mask, degree):
+    segmap = SegmentationMapsOnImage(mask, shape=(400, 400))
+
+    augmenter = iaa.Affine(rotate=[degree], mode='reflect')
+
+    augmenter._mode_segmentation_maps = 'reflect'
+
+    aug = augmenter(image=image, segmentation_maps=segmap)
+
+    augImg = aug[0]
+    augMask = aug[1].get_arr()
+
+    return augImg, augMask
+
+
+# return augImg, augMask.get_arr()
+
+
+def extractPatches(images, masks, patchSize=96):
     patchesImg = []
     patchesMask = []
 
@@ -68,6 +89,59 @@ def extractPatchesTest(image, patchSize=96):
 
     return np.array(patchesImg)
 
+def generateAugmentations(images, masks):
+    # rotate the images by 15, 45, 60, 75, 90
+    # horizontal flip, vertical flip
+
+    augmentedImages = []
+    augmentedMasks = []
+
+    flipVertical = A.VerticalFlip(p=1)
+    flipHorizontal = A.HorizontalFlip(p=1)
+
+
+    for image, mask in zip(images, masks):
+        augmentedImages.append(image)
+        augmentedMasks.append(mask)
+
+        aug = flipVertical(image=image, mask=mask)
+        imageAug = aug['image']
+        imageMask = aug['mask']
+        augmentedImages.append(imageAug)
+        augmentedMasks.append(imageMask)
+
+        aug = flipHorizontal(image=image, mask=mask)
+        imageAug = aug['image']
+        imageMask = aug['mask']
+        augmentedImages.append(imageAug)
+        augmentedMasks.append(imageMask)
+
+        imageAug, imageMask = rotateWithReflectMode(image, mask, 15)
+        augmentedImages.append(imageAug)
+        augmentedMasks.append(imageMask)
+
+        imageAug, imageMask = rotateWithReflectMode(image, mask, 30)
+        augmentedImages.append(imageAug)
+        augmentedMasks.append(imageMask)
+
+        imageAug, imageMask = rotateWithReflectMode(image, mask, 45)
+        augmentedImages.append(imageAug)
+        augmentedMasks.append(imageMask)
+
+        imageAug, imageMask = rotateWithReflectMode(image, mask, 60)
+        augmentedImages.append(imageAug)
+        augmentedMasks.append(imageMask)
+
+        imageAug, imageMask = rotateWithReflectMode(image, mask, 75)
+        augmentedImages.append(imageAug)
+        augmentedMasks.append(imageMask)
+
+        imageAug, imageMask = rotateWithReflectMode(image, mask, 90)
+        augmentedImages.append(imageAug)
+        augmentedMasks.append(imageMask)
+
+    return np.array(augmentedImages), np.array(augmentedMasks)
+
 def loadDataset():
     imgNames = os.listdir(constants.trainingImages)
 
@@ -81,11 +155,14 @@ def loadDataset():
         images.append(np.array(image))
         masks.append(np.array(mask))
 
+    images, masks = generateAugmentations(images, masks)
     images, masks = extractPatches(images, masks)
 
     images = np.array(images, dtype=np.float32)
     masks = np.array(masks)
-    masks[masks > 0] = 1.
+
+    masks[masks <= 127] = 0
+    masks[masks > 127] = 1
 
     shuffle = np.random.permutation(images.shape[0])
     images = images[shuffle]
@@ -101,4 +178,5 @@ def loadTestImage(path):
     image = Image.open(path).convert("RGB")
     image = np.array(image)
 
-    return extractPatchesTest(image)
+    return image
+    # return extractPatchesTest(image)

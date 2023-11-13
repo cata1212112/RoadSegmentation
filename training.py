@@ -16,24 +16,22 @@ import  torchmetrics
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import dataset
+import numpy as np
 from segmentation_models_pytorch import losses as L
 
 trainTransforms = A.Compose([
-
-    A.HorizontalFlip(),
-    A.VerticalFlip(),
-
-    A.RandomRotate90(),
-    A.Transpose(),
-
-    A.Rotate(limit=90, p=0.7, border_mode=cv2.BORDER_REFLECT),
-
-    A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,),
+    # A.RandomRotate90(),
+    # A.OneOf([A.VerticalFlip(),
+    #          A.HorizontalFlip(),
+    #          A.Transpose(),
+    # ]),
+    #
+    # A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,),
     ToTensorV2()
 ])
 
 validationTransforms = A.Compose([
-    A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,),
+    # A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,),
     ToTensorV2()
 ])
 
@@ -52,13 +50,14 @@ def trainMethod(model, epochs, batchSize, learningRate, weightDecay, device):
 
     writer = SummaryWriter(comment=f'LR_{learningRate}_BS_{batchSize}')
 
-    optimizer = torch.optim.Adamax(model.parameters(), lr=learningRate)
-    # lossFunction = nn.BCEWithLogitsLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=learningRate)
+    # lrScheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, verbose=True)
+    lossFunction = nn.BCEWithLogitsLoss()
     # lossFunction = L.JaccardLoss(mode='binary', from_logits=True)
-    lossFunction = L.FocalLoss(mode='binary')
+    # lossFunction = L.FocalLoss(mode='binary')
     # lossFunction = L.TverskyLoss(mode='binary', from_logits=True, alpha=0.4, beta=0.6)
+    # lossFunction = L.DiceLoss(mode='binary', from_logits=True)
 
-    globalStep = 0
     for epoch in range(epochs):
         model.train()
 
@@ -75,37 +74,39 @@ def trainMethod(model, epochs, batchSize, learningRate, weightDecay, device):
                 pred = model(X).squeeze(1)
                 loss = lossFunction(pred, y)
                 epochLoss += loss.item()
-                writer.add_scalar('Loss/train', loss.item(), globalStep)
+                writer.add_scalar('Loss/train', loss.item(), epoch)
 
                 progessBar.set_postfix(**{'loss (batch)': loss.item()})
 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                # lrScheduler.step(loss)
 
                 progessBar.update(X.shape[0])
-                globalStep += 1
 
-                if globalStep % 5 == 0:
-                    validationScoreDice, validationScoreJaccard = validationMethod(model, valLoader, device)
-                    writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], globalStep)
+                if epoch % 1 == 0:
+                    validationScoreDice, validationScoreJaccard, lossValidation = validationMethod(model, valLoader, device, lossFunction)
+                    writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], epoch)
 
-                    writer.add_scalar('Dice/validation', validationScoreDice, globalStep)
-                    writer.add_scalar('Jaccard/validation', validationScoreJaccard, globalStep)
+                    writer.add_scalar('Dice/validation', validationScoreDice, epoch)
+                    writer.add_scalar('F1Score/validation', validationScoreJaccard, epoch)
+                    writer.add_scalar('Loss/validation', lossValidation, epoch)
 
-                    writer.add_images('images', X, globalStep)
-                    writer.add_images('masks/true', (y.unsqueeze(1)) * 255, globalStep)
-                    writer.add_images('mask/predicted', (torch.sigmoid(pred) > 0.5).unsqueeze(1), globalStep)
+                    writer.add_images('images', X, epoch)
+                    writer.add_images('masks/true', (y.unsqueeze(1)) * 255, epoch)
+                    writer.add_images('mask/predicted', (torch.sigmoid(pred) > 0.5).unsqueeze(1), epoch)
 
 
 
-def validationMethod(model, loader, device):
+def validationMethod(model, loader, device, lossVal):
     model.eval()
 
     nVal = len(loader)
     totalDice = 0
+    totalLoss = 0
     dice = torchmetrics.Dice(average='micro').to(device)
-    jaccard = torchmetrics.JaccardIndex(task='binary', average='micro').to(device)
+    jaccard = torchmetrics.F1Score(task='binary', average='micro').to(device)
 
     totalJaccard = 0
 
@@ -122,5 +123,7 @@ def validationMethod(model, loader, device):
         totalDice += dice(pred, y)
         totalJaccard += jaccard(pred, y)
 
+        # totalLoss += lossVal(pred, y)
+
     model.train()
-    return totalDice / nVal, totalJaccard / nVal
+    return totalDice / nVal, totalJaccard / nVal, totalLoss / nVal
