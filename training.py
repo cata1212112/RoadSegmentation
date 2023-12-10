@@ -20,24 +20,22 @@ import numpy as np
 from segmentation_models_pytorch import losses as L
 
 trainTransforms = A.Compose([
-    # A.RandomRotate90(),
-    # A.OneOf([A.VerticalFlip(),
-    #          A.HorizontalFlip(),
-    #          A.Transpose(),
-    # ]),
-    #
-    # A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,),
+    A.RandomRotate90(p=0.5),
+    A.VerticalFlip(p=0.5),
+    A.HorizontalFlip(p=0.5),
+    A.Transpose(p=0.5),
+    A.Rotate(p=0.5, border_mode=cv2.BORDER_REFLECT),
+    A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,),
     ToTensorV2()
 ])
 
 validationTransforms = A.Compose([
-    # A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,),
+    A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,),
     ToTensorV2()
 ])
 
 def trainMethod(model, epochs, batchSize, learningRate, weightDecay, device):
     Xtrain, Xval, ytrain, yval = dataset.getTrainValSplit()
-
 
     nTrain = len(Xtrain)
     nVal = len(Xval)
@@ -45,17 +43,17 @@ def trainMethod(model, epochs, batchSize, learningRate, weightDecay, device):
     trainDataset = preprocessing.CustomDataset(Xtrain, ytrain, trainTransforms)
     validationDataset = preprocessing.CustomDataset(Xval, yval, validationTransforms)
 
-    trainLoader = DataLoader(trainDataset, batchSize, shuffle=True)
-    valLoader = DataLoader(validationDataset, batchSize, shuffle=True)
+    trainLoader = DataLoader(trainDataset, batchSize)
+    valLoader = DataLoader(validationDataset, batchSize)
 
     writer = SummaryWriter(comment=f'LR_{learningRate}_BS_{batchSize}')
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learningRate)
     # lrScheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, verbose=True)
-    lossFunction = nn.BCEWithLogitsLoss()
+    # lossFunction = nn.BCEWithLogitsLoss()
     # lossFunction = L.JaccardLoss(mode='binary', from_logits=True)
     # lossFunction = L.FocalLoss(mode='binary')
-    # lossFunction = L.TverskyLoss(mode='binary', from_logits=True, alpha=0.4, beta=0.6)
+    lossFunction = L.TverskyLoss(mode='binary', from_logits=True, alpha=0.4, beta=0.6)
     # lossFunction = L.DiceLoss(mode='binary', from_logits=True)
 
     for epoch in range(epochs):
@@ -67,18 +65,18 @@ def trainMethod(model, epochs, batchSize, learningRate, weightDecay, device):
             for batch in trainLoader:
                 X = batch['image']
                 y = batch['mask']
-
                 X = X.to(device=device, dtype=torch.float32)
                 y = y.to(device=device, dtype=torch.float32).squeeze(1)
 
+                optimizer.zero_grad()
                 pred = model(X).squeeze(1)
+
                 loss = lossFunction(pred, y)
                 epochLoss += loss.item()
                 writer.add_scalar('Loss/train', loss.item(), epoch)
 
                 progessBar.set_postfix(**{'loss (batch)': loss.item()})
 
-                optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 # lrScheduler.step(loss)
@@ -95,7 +93,10 @@ def trainMethod(model, epochs, batchSize, learningRate, weightDecay, device):
 
                     writer.add_images('images', X, epoch)
                     writer.add_images('masks/true', (y.unsqueeze(1)) * 255, epoch)
-                    writer.add_images('mask/predicted', (torch.sigmoid(pred) > 0.5).unsqueeze(1), epoch)
+                    writer.add_images('mask/predicted', (torch.sigmoid(pred) > 0.5).unsqueeze(1) * 255, epoch)
+                    writer.add_scalar('Loss/train', loss.item(), epoch)
+
+        torch.save(model.state_dict(), "best/model7.pth")
 
 
 
@@ -116,6 +117,7 @@ def validationMethod(model, loader, device, lossVal):
 
         X = X.to(device=device, dtype=torch.float32)
         y = y.to(device=device, dtype=torch.uint8).squeeze(1)
+        y_true = y.to(device=device, dtype=torch.float32).squeeze(1)
 
         with torch.no_grad():
             pred = model(X).squeeze(1)
@@ -123,7 +125,8 @@ def validationMethod(model, loader, device, lossVal):
         totalDice += dice(pred, y)
         totalJaccard += jaccard(pred, y)
 
-        # totalLoss += lossVal(pred, y)
+        totalLoss += lossVal(pred, y_true).item()
+        y_true.detach()
 
     model.train()
     return totalDice / nVal, totalJaccard / nVal, totalLoss / nVal

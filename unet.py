@@ -9,15 +9,17 @@ class ConvBlock(nn.Module):
         super(ConvBlock, self).__init__()
 
         self.conv = nn.Sequential(
-            nn.Conv2d(channelsIn, channelsOut, 3, padding='same', bias=False),
-            # nn.Dropout(0.25),
+            nn.Conv2d(channelsIn, channelsOut, 3, padding=1, bias=False),
             nn.BatchNorm2d(channelsOut),
-            nn.ReLU(inplace=True),
-
-            nn.Conv2d(channelsOut, channelsOut, 3, padding='same', bias=False),
-            # nn.Dropout(0.25),
+            nn.LeakyReLU(negative_slope=0.05, inplace=True),
+            # nn.ReLU(inplace=True),
+            nn.Conv2d(channelsOut, channelsOut, 3, padding=1, bias=False),
             nn.BatchNorm2d(channelsOut),
-            nn.ReLU(inplace=True),
+            # nn.ReLU(inplace=True)
+            nn.LeakyReLU(negative_slope=0.05, inplace=True),
+            # nn.Conv2d(channelsOut, channelsOut, 3, padding=1, bias=False),
+            # nn.BatchNorm2d(channelsOut),
+            # nn.LeakyReLU(negative_slope=0.05, inplace=True)
         )
 
     def forward(self, x):
@@ -35,8 +37,6 @@ class UNet(nn.Module):
         self.encoder = nn.ModuleList()
         self.decoder = nn.ModuleList()
 
-        self.resDoubleConv = nn.ModuleList()
-
         self.pool = nn.MaxPool2d(2, 2)
         self.dropout = nn.Dropout(0.2)
 
@@ -45,8 +45,8 @@ class UNet(nn.Module):
             channelsIn = feature
 
         for feature in reversed(self.features):
-            self.decoder.append(nn.ConvTranspose2d(2 * feature, feature, 2, 2))
-            self.decoder.append(ConvBlock(2 * feature, feature))
+            self.decoder.append(nn.Sequential(nn.ConvTranspose2d(2 * feature, feature, kernel_size=2, stride=2)))
+            self.decoder.append(nn.Sequential(ConvBlock(2 * feature, feature)))
 
         self.bottleneck = ConvBlock(self.features[-1], self.features[-1] * 2)
 
@@ -60,16 +60,13 @@ class UNet(nn.Module):
 
             skipConnections.append(x)
             x = self.pool(x)
-            x = self.dropout(x)
 
         x = self.bottleneck(x)
         skipConnections = skipConnections[::-1]
 
         for i in range(0, len(self.decoder), 2):
             x = self.decoder[i](x)
-
             concatenateSkipConn = torch.cat((skipConnections[i // 2], x), dim=1)
             x = self.decoder[i + 1](concatenateSkipConn)
-            x = self.dropout(x)
 
         return self.final(x)

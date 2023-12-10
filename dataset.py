@@ -97,48 +97,90 @@ def generateAugmentations(images, masks):
     augmentedMasks = []
 
     flipVertical = A.VerticalFlip(p=1)
+    resize = A.Resize(352, 352, interpolation=cv2.INTER_AREA, p=1)
     flipHorizontal = A.HorizontalFlip(p=1)
 
-
+    cnt = 0
     for image, mask in zip(images, masks):
+        aug = resize(image=image, mask=mask)
+        image = aug['image']
+        mask = aug['mask']
         augmentedImages.append(image)
         augmentedMasks.append(mask)
 
-        aug = flipVertical(image=image, mask=mask)
-        imageAug = aug['image']
-        imageMask = aug['mask']
-        augmentedImages.append(imageAug)
-        augmentedMasks.append(imageMask)
-
-        aug = flipHorizontal(image=image, mask=mask)
-        imageAug = aug['image']
-        imageMask = aug['mask']
-        augmentedImages.append(imageAug)
-        augmentedMasks.append(imageMask)
-
-        imageAug, imageMask = rotateWithReflectMode(image, mask, 15)
-        augmentedImages.append(imageAug)
-        augmentedMasks.append(imageMask)
-
-        imageAug, imageMask = rotateWithReflectMode(image, mask, 30)
-        augmentedImages.append(imageAug)
-        augmentedMasks.append(imageMask)
-
-        imageAug, imageMask = rotateWithReflectMode(image, mask, 45)
-        augmentedImages.append(imageAug)
-        augmentedMasks.append(imageMask)
-
-        imageAug, imageMask = rotateWithReflectMode(image, mask, 60)
-        augmentedImages.append(imageAug)
-        augmentedMasks.append(imageMask)
-
-        imageAug, imageMask = rotateWithReflectMode(image, mask, 75)
-        augmentedImages.append(imageAug)
-        augmentedMasks.append(imageMask)
-
-        imageAug, imageMask = rotateWithReflectMode(image, mask, 90)
-        augmentedImages.append(imageAug)
-        augmentedMasks.append(imageMask)
+        # one_image = image[:256, :256, :]
+        # one_mask = mask[:256, :256]
+        #
+        # augmentedImages.append(one_image)
+        # augmentedMasks.append(one_mask)
+        #
+        # two_image = image[144:400, :256, :]
+        # two_mask = mask[144:400, :256]
+        #
+        # augmentedImages.append(two_image)
+        # augmentedMasks.append(two_mask)
+        #
+        # three_image = image[:256, 144:400, :]
+        # three_mask = mask[:256, 144:400]
+        #
+        # augmentedImages.append(three_image)
+        # augmentedMasks.append(three_mask)
+        #
+        # four_image = image[144:400, 144:400, :]
+        # four_mask = mask[144:400, 144:400]
+        #
+        # augmentedImages.append(four_image)
+        # augmentedMasks.append(four_mask)
+        #
+        # Image.fromarray(image).save(f"imagini/sat_{cnt}.jpg")
+        # Image.fromarray(mask).save(f"imagini/gt_{cnt}.jpg")
+        # cnt += 1
+        # aug = flipVertical(image=image, mask=mask)
+        # imageAug = aug['image']
+        # imageMask = aug['mask']
+        # augmentedImages.append(imageAug)
+        # augmentedMasks.append(imageMask)
+        #
+        # aug = flipHorizontal(image=image, mask=mask)
+        # imageAug = aug['image']
+        # imageMask = aug['mask']
+        # augmentedImages.append(imageAug)
+        # augmentedMasks.append(imageMask)
+        # #
+        # imageAug, imageMask = rotateWithReflectMode(image, mask, 225)
+        # augmentedImages.append(imageAug)
+        # augmentedMasks.append(imageMask)
+        #
+        # imageAug, imageMask = rotateWithReflectMode(image, mask, 45)
+        # augmentedImages.append(imageAug)
+        # augmentedMasks.append(imageMask)
+        #
+        # Image.fromarray(imageAug).save(f"imagini/sat_{cnt}.jpg")
+        # Image.fromarray(imageMask).save(f"imagini/gt_{cnt}.jpg")
+        #
+        # cnt += 1
+        #
+        # imageAug, imageMask = rotateWithReflectMode(image, mask, 90)
+        # augmentedImages.append(imageAug)
+        # augmentedMasks.append(imageMask)
+        #
+        # Image.fromarray(imageAug).save(f"imagini/sat_{cnt}.jpg")
+        # Image.fromarray(imageMask).save(f"imagini/gt_{cnt}.jpg")
+        #
+        # cnt += 1
+        #
+        # imageAug, imageMask = rotateWithReflectMode(image, mask, 135)
+        # augmentedImages.append(imageAug)
+        # augmentedMasks.append(imageMask)
+        #
+        # Image.fromarray(imageAug).save(f"imagini/sat_{cnt}.jpg")
+        # Image.fromarray(imageMask).save(f"imagini/gt_{cnt}.jpg")
+        #
+        # imageAug, imageMask = rotateWithReflectMode(image, mask, 270)
+        # augmentedImages.append(imageAug)
+        # augmentedMasks.append(imageMask)
+        #
+        # cnt += 1
 
     return np.array(augmentedImages), np.array(augmentedMasks)
 
@@ -156,7 +198,7 @@ def loadDataset():
         masks.append(np.array(mask))
 
     images, masks = generateAugmentations(images, masks)
-    images, masks = extractPatches(images, masks)
+    # images, masks = extractPatches(images, masks)
 
     images = np.array(images, dtype=np.float32)
     masks = np.array(masks)
@@ -172,11 +214,18 @@ def loadDataset():
 
 def getTrainValSplit():
     X, y = loadDataset()
-    return train_test_split(X, y, test_size=0.33, random_state=42)
+    return train_test_split(X, y, test_size=0.1, random_state=42, shuffle=True)
 
 def loadTestImage(path):
     image = Image.open(path).convert("RGB")
     image = np.array(image)
 
-    return image
-    # return extractPatchesTest(image)
+    one, two, three, four = image[:400, :400, :], image[208:608, :400, :], image[:400, 208:608, :], image[208:608, 208:608, :]
+
+    one = cv2.resize(one, (352, 352), cv2.INTER_AREA)
+    two = cv2.resize(two, (352, 352), cv2.INTER_AREA)
+    three = cv2.resize(three, (352, 352), cv2.INTER_AREA)
+    four = cv2.resize(four, (352, 352), cv2.INTER_AREA)
+
+    return one, two, three, four
+    # return image
