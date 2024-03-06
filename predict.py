@@ -10,24 +10,15 @@ import dataset
 
 testTransforms = A.Compose([
     A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0),
+    # A.Resize(224, 224),
     ToTensorV2()
 ])
 def predict(model, imagePath, device):
     model.eval()
 
-    one, two, three, four = dataset.loadTestImage(imagePath)
-    # image = dataset.loadTestImage(imagePath)
-
-    # one = image[:400, :400, :]
-    # two = image[208:608, :400, :]
-    # three = image[:400, 208:608, :]
-    # four =image[208:608, 208:608, :]
-
-    testDataset = preprocessing.CustomDataset([one, two, three, four], [np.zeros_like(one), np.zeros_like(one), np.zeros_like(one), np.zeros_like(one)], testTransforms)
-    # testDataset = preprocessing.CustomDataset([image], [np.zeros_like(image)], testTransforms)
-    testLoader = DataLoader(testDataset, 4)
-    # testLoader = DataLoader(testDataset, len(image))
-
+    patches = dataset.loadTestImage(imagePath)
+    testDataset = preprocessing.CustomDataset(patches, [np.zeros_like(patch) for patch in patches], testTransforms)
+    testLoader = DataLoader(testDataset, len(patches))
 
     with torch.no_grad():
         for imgBatch in testLoader:
@@ -38,4 +29,8 @@ def predict(model, imagePath, device):
             pred = (pred > 0.5).float().detach().cpu().numpy()
             pred = np.array(pred, dtype=np.uint8)
             pred = pred * 255
+
+
+            # pred = model(imgBatch)
+            # pred = pred.float().detach().cpu().numpy()
             return pred[:, :]

@@ -26,11 +26,13 @@ trainTransforms = A.Compose([
     A.Transpose(p=0.5),
     A.Rotate(p=0.5, border_mode=cv2.BORDER_REFLECT),
     A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,),
+    # A.Resize(224, 224),
     ToTensorV2()
 ])
 
 validationTransforms = A.Compose([
     A.Normalize(mean=constants.DATA_MEAN,std=constants.DATA_STD,max_pixel_value=255.0,),
+    # A.Resize(224, 224),
     ToTensorV2()
 ])
 
@@ -50,10 +52,11 @@ def trainMethod(model, epochs, batchSize, learningRate, weightDecay, device):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learningRate)
     # lrScheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, verbose=True)
-    # lossFunction = nn.BCEWithLogitsLoss()
+    lossFunction = nn.BCEWithLogitsLoss()
+    # lossFunction = nn.CrossEntropyLoss()
     # lossFunction = L.JaccardLoss(mode='binary', from_logits=True)
     # lossFunction = L.FocalLoss(mode='binary')
-    lossFunction = L.TverskyLoss(mode='binary', from_logits=True, alpha=0.4, beta=0.6)
+    # lossFunction = L.TverskyLoss(mode='binary', from_logits=True, alpha=0.4, beta=0.6)
     # lossFunction = L.DiceLoss(mode='binary', from_logits=True)
 
     for epoch in range(epochs):
@@ -70,6 +73,12 @@ def trainMethod(model, epochs, batchSize, learningRate, weightDecay, device):
 
                 optimizer.zero_grad()
                 pred = model(X).squeeze(1)
+
+                opposite_mask_tensor = 1 - y
+                original_mask_tensor = y.unsqueeze(1)
+                opposite_mask_tensor = opposite_mask_tensor.unsqueeze(1)
+
+                combined_mask_tensor = torch.cat((original_mask_tensor, opposite_mask_tensor), dim=1)
 
                 loss = lossFunction(pred, y)
                 epochLoss += loss.item()
@@ -96,7 +105,7 @@ def trainMethod(model, epochs, batchSize, learningRate, weightDecay, device):
                     writer.add_images('mask/predicted', (torch.sigmoid(pred) > 0.5).unsqueeze(1) * 255, epoch)
                     writer.add_scalar('Loss/train', loss.item(), epoch)
 
-        torch.save(model.state_dict(), "best/model7.pth")
+        torch.save(model.state_dict(), "best/segnet.pth")
 
 
 
@@ -121,6 +130,12 @@ def validationMethod(model, loader, device, lossVal):
 
         with torch.no_grad():
             pred = model(X).squeeze(1)
+
+        opposite_mask_tensor = 1 - y_true
+        original_mask_tensor = y_true.unsqueeze(1)
+        opposite_mask_tensor = opposite_mask_tensor.unsqueeze(1)
+
+        combined_mask_tensor = torch.cat((original_mask_tensor, opposite_mask_tensor), dim=1)
 
         totalDice += dice(pred, y)
         totalJaccard += jaccard(pred, y)
